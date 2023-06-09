@@ -38,7 +38,19 @@ var (
 )
 
 const (
-	appDescription = `mender-setup is a cli tool for generating the mender.conf configuration files, either through specifying the parameters to the CLI, or through running it interactively`
+	appDescription      = `mender-setup is a cli tool for generating the mender.conf configuration files, either through specifying the parameters to the CLI, or through running it interactively`
+	snapshotDescription = "Creates a snapshot of the currently running " +
+		"rootfs. The snapshots can be passed as a rootfs-image to the " +
+		"mender-artifact tool to create an update based on THIS " +
+		"device's rootfs. Refer to the list of COMMANDS to specify " +
+		"where to stream the image.\n" +
+		"\t NOTE: If the process gets killed (e.g. by SIGKILL) " +
+		"while a snapshot is in progress, the system may freeze - " +
+		"forcing you to manually hard-reboot the device. " +
+		"Use at your own risk - preferably on a device that " +
+		"is physically accessible."
+	snapshotDumpDescription = "Dump rootfs to standard out. Exits if " +
+		"output isn't redirected."
 )
 
 const (
@@ -178,6 +190,45 @@ func SetupCLI(args []string) error {
 				},
 			},
 		},
+		{
+			Name: "snapshot",
+			Usage: "Create filesystem snapshot -" +
+				"'mender snapshot --help' for more.",
+			Description: snapshotDescription,
+			Subcommands: []*cli.Command{
+				{
+					Name:        "dump",
+					Description: snapshotDumpDescription,
+					Usage:       "Dumps rootfs to stdout.",
+					Action:      runOptions.DumpSnapshot,
+					Flags: []cli.Flag{
+						&cli.StringFlag{
+							Name: "source",
+							Usage: "Path to target " +
+								"filesystem " +
+								"file/directory/device" +
+								"to snapshot.",
+							Value: "/",
+						},
+						&cli.BoolFlag{
+							Name:    "quiet",
+							Aliases: []string{"q"},
+							Usage: "Suppress output " +
+								"and only report " +
+								"logs from " +
+								"ERROR level",
+						},
+						&cli.StringFlag{
+							Name:    "compression",
+							Aliases: []string{"C"},
+							Usage: "Compression type to use on the" +
+								"rootfs snapshot {none,gzip}",
+							Value: "none",
+						},
+					},
+				},
+			},
+		},
 	}
 	cli.HelpPrinter = upgradeHelpPrinter(cli.HelpPrinter)
 	cli.VersionPrinter = func(c *cli.Context) {
@@ -189,11 +240,7 @@ func SetupCLI(args []string) error {
 func (runOptions *runOptionsType) commonCLIHandler(
 	ctx *cli.Context) (*conf.MenderConfig, error) {
 
-	if ctx.Command.Name != "install" && ctx.Args().Len() > 0 {
-		return nil, errors.Errorf(
-			errMsgAmbiguousArgumentsGivenF,
-			ctx.Args().First())
-	}
+	fmt.Println("runOptions datastore: ", runOptions.dataStore)
 
 	// Handle config flags
 	config, err := conf.LoadConfig(
@@ -213,6 +260,7 @@ func (runOptions *runOptionsType) commonCLIHandler(
 		config.DeviceTypeFile = config.MenderConfigFromFile.DeviceTypeFile
 
 	} else {
+		// TODO - This does not work atm, dataStore is empty
 		// If --data flag is not used then dataStore is /var/lib/mender
 		config.MenderConfigFromFile.DeviceTypeFile = path.Join(
 			runOptions.dataStore, "device_type")
@@ -248,9 +296,13 @@ func (runOptions *runOptionsType) handleCLIOptions(ctx *cli.Context) error {
 		// Check that user has permission to directories so that
 		// the user doesn't have to perform the setup before raising
 		// an error.
+		fmt.Println("runOptions config: ", runOptions.config)
+		fmt.Println("runOptions config: ", path.Dir(runOptions.config))
 		if err = checkWritePermissions(path.Dir(runOptions.config)); err != nil {
 			return err
 		}
+		fmt.Println("runOptions config datastore: ", runOptions.dataStore)
+		fmt.Println("runOptions config datastore: ", path.Dir(runOptions.dataStore))
 		if err = checkWritePermissions(runOptions.dataStore); err != nil {
 			return err
 		}
@@ -363,6 +415,7 @@ func upgradeHelpPrinter(defaultPrinter func(w io.Writer, templ string, data inte
 }
 
 func checkWritePermissions(dir string) error {
+	fmt.Println("Checking the permissions for: ", dir)
 	_, err := os.Stat(dir)
 	if os.IsNotExist(err) {
 		err := os.MkdirAll(dir, 0755)
@@ -391,5 +444,9 @@ func checkWritePermissions(dir string) error {
 }
 
 func main() {
-	SetupCLI(os.Args)
+	err := SetupCLI(os.Args)
+	if err != nil {
+		fmt.Printf("Got an error: %+v\n", err)
+		os.Exit(1)
+	}
 }
