@@ -341,9 +341,7 @@ func (runOptions *runOptionsType) setupCLIHandler(ctx *cli.Context) error {
 	} else {
 		runOptions.config = runOptions.setupOptions.configPath
 	}
-	if ctx.IsSet("data") {
-		runOptions.dataStore = ctx.String("data")
-	}
+	runOptions.dataStore = ctx.String("data")
 	if runOptions.Config.ServerCert != "" &&
 		runOptions.setupOptions.serverCert == "" {
 		runOptions.setupOptions.serverCert = runOptions.Config.ServerCert
